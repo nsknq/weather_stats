@@ -1,1 +1,1 @@
-#dd-mm-yy hh:mm | temperature
+#dd-mm-yy hh:mm:ss | temperature

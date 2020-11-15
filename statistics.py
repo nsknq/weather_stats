@@ -1,14 +1,32 @@
 #!/usr/bin/env python3
-"""Collect current temperature and save it to file.
+"""Repeatedly collect temperature and save it to a file.
 
 Currently, it observes the temperature in Lyon and Saint-Etienne only.
 For each city its own file is created (e.g. "Lyon.txt").
-To add city, modify the dictionary `WEB_PAGES` with a city name as a key
-and the link to correspondent MeteoFrance web page as a value.
-The key `main` is ignored for temperature observation, but is used for
-other purposes.
+To add city, modify the dictionary `WEB_PAGES`.
+
+Observation frequency is controlled by `REPEAT_INTERVAL`.
+
+Attributes
+----------
+WEB_PAGES : dict
+    A key is a city name, and the related value is a link to the
+    correspondent MeteoFrance web page.
+    The key `main` is ignored for temperature observation, but is used
+    for other purposes.
+REPEAT_INTERVAL : float
+    Start observation every `REPEAT_INTERVAL` seconds.  The first
+    observation starts when the local time is multiple of this number.
+    Example: if the value is 3600 and the current time is 11:32, the
+    first observation will start at about 12:00 (few seconds are spent
+    to open a browser and to get the temperature's value).
+TIMEOUT : float
+    Timeout for a web-page element waiting.
+DATE_TIME_FORMAT : str
+    Time format, same as for `datetime.datetime.strftime`.
 
 """
+import time
 import datetime
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -25,8 +43,9 @@ WEB_PAGES = {
     'Saint-Etienne': 'https://meteofrance.com/previsions-meteo-france/saint-etienne/42000',
     'Lyon': 'https://meteofrance.com/previsions-meteo-france/lyon/69000',
 }
-# Timeout for a web-page element waiting.
-TIME_OUT = 10
+REPEAT_INTERVAL = 60
+TIMEOUT = 10
+DATE_TIME_FORMAT = "%d-%m-%y %H:%M:%S"
 
 
 def click(driver, element):
@@ -35,7 +54,7 @@ def click(driver, element):
 
 def get_and_save_temperature(driver, city):
     temp_xpath = '//*[@id="atmogramme_slider"]/div/ul/li[1]/div/strong'
-    waiter = WebDriverWait(driver, TIME_OUT)
+    waiter = WebDriverWait(driver, TIMEOUT)
     with closing_window(driver, WEB_PAGES[city]):
         temp_el = waiter.until(
             EC.presence_of_element_located((By.XPATH, temp_xpath)))
@@ -44,20 +63,17 @@ def get_and_save_temperature(driver, city):
         output_fname = f'{city}.txt'
         with open(output_fname, 'a') as output:
             date = datetime.datetime.now()
-            measure_time = date.strftime("%d-%m-%y %H:%M")
+            measure_time = date.strftime(DATE_TIME_FORMAT)
             output.write(f'{measure_time} | {temperature}\n')
     return temperature
 
 
-def main():
-    driver = create_browser(headless=True, browser_type="chrome")
-    waiter = WebDriverWait(driver, TIME_OUT)
-    driver.get(WEB_PAGES['main'])
-
+def do_observation(driver):
     # Manage cookies.
+    driver.get(WEB_PAGES['main'])
     cookies_btn_xpath = '//*[@id="didomi-notice-agree-button"]'
     try:
-        cookies_btn = waiter.until(
+        cookies_btn = WebDriverWait(driver, TIMEOUT).until(
             EC.element_to_be_clickable((By.XPATH, cookies_btn_xpath)))
     except TimeoutException as te:
         logger.debug('Cookies had already been accepted.')
@@ -70,6 +86,17 @@ def main():
     for city in WEB_PAGES:
         if city != 'main':
             get_and_save_temperature(driver, city)
+
+
+def main():
+    ri = REPEAT_INTERVAL
+    while True:
+        time.sleep(ri - time.time() % ri)
+        driver = create_browser(headless=True, browser_type="chrome")
+        try:
+            do_observation(driver)
+        finally:
+            driver.quit()
 
 
 if __name__ == '__main__':
